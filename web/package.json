@@ -1,0 +1,48 @@
+{
+  "name": "live2d-driver-web",
+  "version": "1.0.0",
+  "description": "Live2D驱动器Web前端",
+  "main": "electron/main.js",
+"scripts": {
+    "start": "electron .",
+    "build": "vite build",
+    "electron:serve": "vite build && electron .",
+    "preview": "vite preview",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "vue": "^3.4.21",
+    "pinia": "^2.1.7",
+    "vue-router": "^4.3.0"
+  },
+  "devDependencies": {
+    "electron": "^36.4.0",
+    "electron-builder": "^26.0.12", 
+    "@vitejs/plugin-vue": "^5.2.4",
+    "vite": "^6.3.5",
+    "ws": "^8.11.0"
+  },
+  "build": {
+    "appId": "com.example.live2d-driver",
+    "productName": "Live2D驱动器",
+    "copyright": "Copyright © 2025 ${author}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/*.map"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "public/favicon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live2D驱动器</title>
+  <!-- Electron安全策略 -->
+  <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline';">
+</head>
+<body>
+  <div id="app"></div>
+  
+  <!-- 引入构建后的脚本 -->
+  <script type="module" src="/src/main.js"></script>
+  
+  <!-- 加载Live2D SDK -->
+  <script src="/lib/live2d-sdk/live2dcubismcore.min.js"></script>
+</body>
+</html>
