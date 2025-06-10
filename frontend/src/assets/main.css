@@ -1,0 +1,61 @@
+/* 添加基本的全局样式 */
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: var(--background);
+  color: var(--text-color);
+  overflow: hidden;
+  height: 100vh;
+}
+
+/* 设置CSS变量 */
+.dark-theme {
+  --primary-color: #42b983;
+  --background: #1e1e1e;
+  --text-color: #ffffff;
+  --card-bg: #2d2d2d;
+  --sidebar-bg: #252525;
+}
+
+.light-theme {
+  --primary-color: #42b983;
+  --background: #ffffff;
+  --text-color: #333333;
+  --card-bg: #f5f5f5;
+  --sidebar-bg: #e0e0e0;
+}
+
+.blue-theme {
+  --primary-color: #2196f3;
+  --background: #0d47a1;
+  --text-color: #ffffff;
+  --card-bg: #283593;
+  --sidebar-bg: #1a237e;
+}
+
+/* 按钮样式 */
+button {
+  cursor: pointer;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 16px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+button.secondary {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+  border: 1px solid var(--primary-color);
+}

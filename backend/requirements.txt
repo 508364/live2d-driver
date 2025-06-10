@@ -1,0 +1,5 @@
+Flask==2.2.3
+Flask-SocketIO==5.3.4
+pyvirtualcam==0.11; platform_system == 'Windows'
+numpy==1.26.4
+opencv-python-headless==4.9.0.80

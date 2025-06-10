@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live2D驱动器</title>
+  <meta name="description" content="基于AI的面部捕捉和Live2D模型驱动工具">
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <script type="module">
+    // 初始加载页面
+    document.addEventListener('DOMContentLoaded', () => {
+      // 检测WebGL支持
+      const webglSupported = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          return !!window.WebGLRenderingContext && 
+            (canvas.getContext('webgl') || canvas.getContext('experimental-webgl'));
+        } catch (e) {
+          return false;
+        }
+      };
+      
+      // 检测TensorFlow.js支持
+      const tfjsSupported = () => {
+        try {
+          return typeof WebAssembly === 'object' && typeof WebGLRenderingContext !== 'undefined';
+        } catch (e) {
+          return false;
+        }
+      };
+      
+      // 更新状态显示
+      const statusContainer = document.getElementById('app-status');
+      const updateStatus = (message) => {
+        statusContainer.innerHTML += `<div>${message}</div>`;
+      };
+      
+      // 设置初始状态
+      setTimeout(() => {
+        updateStatus('正在检查系统兼容性...');
+        
+        setTimeout(() => {
+          if (!webglSupported()) {
+            updateStatus('❌ 错误: 浏览器不支持WebGL，TensorFlow.js需要WebGL支持');
+          } else {
+            updateStatus('✓ WebGL 支持已确认');
+          }
+          
+          if (!tfjsSupported()) {
+            updateStatus('❌ 错误: 浏览器不满足TensorFlow.js运行要求');
+          } else {
+            updateStatus('✓ TensorFlow.js 兼容性已确认');
+          }
+          
+          updateStatus('开始加载应用程序资源...');
+        }, 1000);
+      }, 500);
+    });
+  </script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #1e1e1e;
+      color: #42b983;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+      text-align: center;
+      overflow: hidden;
+    }
+    
+    .app-loader {
+      max-width: 800px;
+      padding: 30px;
+    }
+    
+    .app-logo {
+      margin-bottom: 30px;
+    }
+    
+    .app-icon {
+      font-size: 60px;
+      margin-bottom: 15px;
+    }
+    
+    .app-name {
+      font-size: 36px;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    
+    .app-version {
+      font-size: 18px;
+      color: #888;
+    }
+    
+    .loader-animation {
+      display: flex;
+      justify-content: center;
+      margin: 40px 0;
+    }
+    
+    .loader-spinner {
+      border: 8px solid rgba(66, 185, 131, 0.3);
+      border-top: 8px solid #42b983;
+      border-radius: 50%;
+      width: 100px;
+      height: 100px;
+      animation: spin 1.5s linear infinite;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .app-status {
+      background: rgba(30, 30, 30, 0.7);
+      border: 1px solid rgba(66, 185, 131, 0.3);
+      border-radius: 8px;
+      padding: 20px;
+      margin-top: 30px;
+      max-height: 200px;
+      overflow-y: auto;
+      width: 100%;
+      text-align: left;
+    }
+    
+    #app-status div {
+      padding: 8px 0;
+      font-size: 16px;
+      color: #ccc;
+    }
+    
+    .app-status label {
+      display: inline-block;
+      width: 30px;
+    }
+    
+    .compatibility-info {
+      background: rgba(66, 185, 131, 0.1);
+      border-left: 4px solid #42b983;
+      padding: 15px;
+      margin-top: 20px;
+      border-radius: 4px;
+      text-align: left;
+    }
+    
+    .recommendation {
+      margin-top: 20px;
+      padding: 15px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      background: rgba(30, 30, 30, 0.7);
+    }
+    
+    .recommendation h3 {
+      margin-bottom: 10px;
+      color: #ffb648;
+    }
+    
+    .browser-logos {
+      display: flex;
+      justify-content: center;
+      gap: 30px;
+      margin-top: 15px;
+    }
+    
+    .browser-logo {
+      font-size: 40px;
+    }
+    
+    .tech-stack {
+      position: absolute;
+      bottom: 20px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      color: #888;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-loader">
+    <div class="app-logo">
+      <div class="app-icon">👤</div>
+      <h1 class="app-name">Live2D驱动器</h1>
+      <div class="app-version">版本 1.0.0 | AI驱动的实时面部捕捉</div>
+    </div>
+    
+    <div class="loader-animation">
+      <div class="loader-spinner"></div>
+    </div>
+    
+    <div class="app-status" id="app-status">
+      <div>正在初始化应用程序...</div>
+    </div>
+    
+    <div class="compatibility-info">
+      <p>此应用程序需要现代浏览器和硬件加速支持</p>
+    </div>
+    
+    <div class="recommendation">
+      <h3>推荐使用以下浏览器：</h3>
+      <div class="browser-logos">
+        <div class="browser-logo">🌐</div>
+        <div class="browser-logo">🔵</div>
+        <div class="browser-logo">🦊</div>
+        <div class="browser-logo">🧭</div>
+      </div>
+    </div>
+    
+    <div class="tech-stack">
+      <p>Electron &nbsp; • &nbsp; Vue.js &nbsp; • &nbsp; TensorFlow.js &nbsp; • &nbsp; Python</p>
+    </div>
+  </div>
+  
+  <div id="app"></div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
