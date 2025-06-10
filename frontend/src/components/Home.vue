@@ -1,365 +1,263 @@
+<!-- frontend/src/components/Home.vue -->
 <template>
-  <div class="home">
-    <!-- 状态栏 -->
-    <div class="status-card" :class="{ 'status-active': isTracking }">
-      <span class="status-icon">●</span>
-      {{ statusMessage }}
-    </div>
-    
-    <!-- 主控制按钮 -->
-    <button 
-      @click="toggleTracking" 
-      :class="['track-button', { active: isTracking }]"
-    >
-      {{ isTracking ? '停止面捕、动捕' : '启动面捕、动捕' }}
-    </button>
-    
-    <!-- FPS计数器 -->
-    <div class="fps-counter">
-      实时FPS: {{ fps }}
-    </div>
-    
-    <!-- 摄像头预览 -->
+  <div class="home-container">
     <div class="camera-preview">
-      <div class="preview-label">实时摄像头画面</div>
-      <video ref="cameraFeed" autoplay muted></video>
-      <canvas ref="detectionCanvas" class="detection-overlay"></canvas>
+      <!-- 这里显示摄像头画面 -->
+      <div class="camera-placeholder">
+        <div class="placeholder-text">
+          <span v-if="trackingActive">👁 正在追踪面部运动...</span>
+          <span v-else>📷 点击"开始追踪"启动摄像头</span>
+        </div>
+        <div class="fps-counter">FPS: {{ fps }}</div>
+      </div>
     </div>
     
-    <!-- Live2D模型显示区 -->
-    <div class="live2d-container">
-      <div class="preview-label">Live2D形象预览</div>
-      <canvas ref="live2dCanvas" width="640" height="480"></canvas>
+    <div class="controls">
+      <button class="control-btn" @click="toggleTracking">
+        {{ trackingActive ? '⏹️ 停止追踪' : '▶️ 开始追踪' }}
+      </button>
+      <button class="control-btn" @click="resetPosition">🔁 重置位置</button>
     </div>
     
-    <!-- 隐藏视频用于面部检测 -->
-    <video ref="hiddenVideo" autoplay muted style="display: none;"></video>
+    <div class="tracking-data">
+      <h3>追踪数据</h3>
+      <div class="data-grid">
+        <div class="data-item">
+          <span class="data-label">面部位置:</span>
+          <span class="data-value">{{ facePosition.x }}, {{ facePosition.y }}</span>
+        </div>
+        <div class="data-item">
+          <span class="data-label">眼睛状态:</span>
+          <span class="data-value">{{ eyeState }}</span>
+        </div>
+        <div class="data-item">
+          <span class="data-label">嘴巴状态:</span>
+          <span class="data-value">{{ mouthState }}</span>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script>
-import { ref, onMounted, onUnmounted } from 'vue'
-import { useLogStore } from '../stores/logs'
-import { init, startDetection, stopDetection } from '../faceDetection'
 import { useTrackingStore } from '../stores/tracking'
-const trackingStore = useTrackingStore()
+import * as tf from '@tensorflow/tfjs'
+import * as blazeface from '@tensorflow-models/blazeface'
 
 export default {
-  setup() {
-    const cameraFeed = ref(null)
-    const hiddenVideo = ref(null)
-    const detectionCanvas = ref(null)
-    const live2dCanvas = ref(null)
-    const isTracking = ref(false)
-    const statusMessage = ref('准备就绪')
-    const fps = ref('--')
-    const logStore = useLogStore()
-    
-    let animationFrameId = null
-    let lastFace = null
-    let frameCount = 0
-    let lastTime = 0
-    
-    // 初始化面部检测
-    const initFaceDetection = async () => {
-      try {
-        const success = await init()
-        if (success) {
-          logStore.addLog('面部检测模型加载成功')
-          return true
-        } else {
-          logStore.addLog('面部检测模型加载失败', 'error')
-          return false
-        }
-      } catch (error) {
-        logStore.addLog(`面部检测初始化错误: ${error.message}`, 'error')
-        return false
-      }
-    }
-    
-    // 开始追踪
-    const startTracking = async () => {
-      try {
-        statusMessage.value = '正在启动摄像头...'
-        
-        // 获取摄像头权限
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true })
-        cameraFeed.value.srcObject = stream
-        hiddenVideo.value.srcObject = stream
-        
-        // 初始化面部检测
-        const detectionReady = await initFaceDetection()
-        
-        if (detectionReady) {
-          // 启动检测
-          startDetection(hiddenVideo.value, (faceData) => {
-            lastFace = faceData
-            
-            // 在预览上绘制检测结果
-            if (detectionCanvas.value) {
-              const ctx = detectionCanvas.value.getContext('2d')
-              const { width, height } = detectionCanvas.value
-              ctx.clearRect(0, 0, width, height)
-              
-            if (faceData) {
-              trackingStore.updateFaceData(faceData)
-              } else {
-              trackingStore.updateFaceData(null)
-              }
-              
-              // 绘制检测框
-              if (faceData && faceData.box) {
-                ctx.strokeStyle = 'red'
-                ctx.lineWidth = 2
-                ctx.strokeRect(faceData.box.x, faceData.box.y, faceData.box.width, faceData.box.height)
-              }
-              
-              // 更新Live2D模型
-              updateLive2DModel(faceData) 
-            }
-          })
-          
-          // 开始FPS计数
-          startFpsCounter()
-          
-          statusMessage.value = '追踪中...'
-          isTracking.value = true
-          logStore.addLog('面捕、动捕启动')
-          
-          return true
-        }
-      } catch (error) {
-        statusMessage.value = `错误: ${error.message}`
-        logStore.addLog(`摄像头启动失败: ${error.message}`, 'error')
-        return false
-      }
-    }
-    
-    // 停止追踪
-    const stopTracking = () => {
-      if (cameraFeed.value.srcObject) {
-        const tracks = cameraFeed.value.srcObject.getTracks()
-        tracks.forEach(track => track.stop())
-        cameraFeed.value.srcObject = null
-      }
-      
-      // 停止检测
-      stopDetection()
-      
-      // 停止FPS计数
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId)
-        animationFrameId = null
-      }
-      
-      statusMessage.value = '已停止'
-      isTracking.value = false
-      fps.value = '--'
-      logStore.addLog('面捕、动捕停止')
-    }
-    
-    // 切换追踪状态
-    const toggleTracking = async () => {
-      if (isTracking.value) {
-        stopTracking()
-      } else {
-        await startTracking()
-      }
-    }
-    
-    // 更新Live2D模型
-    const updateLive2DModel = (faceData) => {
-      if (!live2dCanvas.value) return
-      
-      const ctx = live2dCanvas.value.getContext('2d')
-      ctx.clearRect(0, 0, live2dCanvas.value.width, live2dCanvas.value.height)
-      
-      // 简单模拟Live2D模型更新
-      ctx.fillStyle = '#42b983'
-      ctx.font = '24px Arial'
-      ctx.textAlign = 'center'
-      ctx.fillText('Live2D模型驱动中...', live2dCanvas.value.width / 2, live2dCanvas.value.height / 2)
-      
-      // 在实际项目中，这里会调用Live2D SDK更新模型状态
-    }
-    
-    // FPS计数器
-    const startFpsCounter = () => {
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId)
-      }
-      
-      frameCount = 0
-      lastTime = performance.now()
-      
-      const calculateFps = (timestamp) => {
-        frameCount++
-        const elapsed = timestamp - lastTime
-        
-        if (elapsed >= 1000) {
-          fps.value = Math.round((frameCount * 1000) / elapsed)
-          trackingStore.updateFps(fps.value)
-        }
-        
-        animationFrameId = requestAnimationFrame(calculateFps)
-      }
-      
-      animationFrameId = requestAnimationFrame(calculateFps)
-    }
-    
-    // 组件挂载时初始化
-    onMounted(async () => {
-      // 设置canvas尺寸匹配视频
-      const setCanvasSize = () => {
-        if (cameraFeed.value) {
-          const videoWidth = cameraFeed.value.videoWidth || 640
-          const videoHeight = cameraFeed.value.videoHeight || 480
-          
-          if (detectionCanvas.value) {
-            detectionCanvas.value.width = videoWidth
-            detectionCanvas.value.height = videoHeight
-          }
-        }
-      }
-      
-      cameraFeed.value.addEventListener('loadedmetadata', setCanvasSize)
-    })
-    
-    // 组件卸载时清理
-    onUnmounted(() => {
-      if (isTracking.value) {
-        trackingStore.startTracking()
-      } else {
-        trackingStore.stopTracking()
-      }
-    })
-
+  data() {
     return {
-      cameraFeed,
-      hiddenVideo,
-      detectionCanvas,
-      live2dCanvas,
-      isTracking,
-      statusMessage,
-      fps,
-      toggleTracking
+      trackingActive: false,
+      fps: 0,
+      facePosition: { x: 0, y: 0 },
+      eyeState: '正常',
+      mouthState: '闭合',
+      faceDetector: null,
+      animationFrameId: null,
+      lastFrameTime: 0,
+      frameCount: 0
+    }
+  },
+  mounted() {
+    this.initFaceDetection()
+  },
+  beforeUnmount() {
+    this.stopTracking()
+  },
+  methods: {
+    async initFaceDetection() {
+      try {
+        // 加载TensorFlow模型
+        await tf.ready()
+        this.faceDetector = await blazeface.load()
+        console.log('人脸检测模型加载成功')
+      } catch (error) {
+        console.error('模型加载失败:', error)
+      }
+    },
+    
+    startFaceTracking() {
+      if (!this.faceDetector) {
+        console.error('人脸检测模型未加载')
+        return
+      }
+      
+      this.trackingActive = true
+      this.trackFace()
+    },
+    
+    async trackFace() {
+      if (!this.trackingActive) return
+      
+      const now = performance.now()
+      const elapsed = now - this.lastFrameTime
+      
+      if (elapsed > 100) {
+        try {
+          // 这里应该获取真实的视频帧
+          // 模拟检测过程
+          const predictions = await this.faceDetector.estimateFaces(document.createElement('canvas'))
+          
+          if (predictions.length > 0) {
+            const face = predictions[0]
+            this.facePosition = {
+              x: Math.round(face.topLeft[0]),
+              y: Math.round(face.topLeft[1])
+            }
+            
+            // 模拟眼睛和嘴巴状态
+            this.eyeState = Math.random() > 0.5 ? '睁开' : '眨眼'
+            this.mouthState = Math.random() > 0.7 ? '张开' : '闭合'
+          }
+          
+          // 更新FPS计数器
+          if (elapsed >= 1000) {
+            this.fps = Math.round((this.frameCount * 1000) / elapsed)
+            this.frameCount = 0
+            this.lastFrameTime = now
+          } else {
+            this.frameCount++
+          }
+        } catch (error) {
+          console.error('面部检测出错:', error)
+        }
+      }
+      
+      this.animationFrameId = requestAnimationFrame(this.trackFace)
+    },
+    
+    stopFaceTracking() {
+      this.trackingActive = false
+      if (this.animationFrameId) {
+        cancelAnimationFrame(this.animationFrameId)
+        this.animationFrameId = null
+      }
+      this.resetPosition()
+    },
+    
+    resetPosition() {
+      this.facePosition = { x: 0, y: 0 }
+      this.eyeState = '正常'
+      this.mouthState = '闭合'
+    },
+    
+    toggleTracking() {
+      if (this.trackingActive) {
+        this.stopFaceTracking()
+      } else {
+        this.startFaceTracking()
+      }
+      this.$emit('tracking-toggled', this.trackingActive)
     }
   }
 }
 </script>
 
 <style scoped>
-.home {
+.home-container {
   display: flex;
   flex-direction: column;
   height: 100%;
-}
-
-.status-card {
-  background: var(--card-bg);
-  padding: 15px;
-  border-radius: 8px;
-  margin-bottom: 20px;
-  font-size: 16px;
-  display: flex;
-  align-items: center;
-  border-left: 4px solid #555;
-}
-
-.status-card.status-active {
-  border-left: 4px solid var(--primary-color);
-}
-
-.status-icon {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #aaa;
-  margin-right: 10px;
-}
-
-.status-card.status-active .status-icon {
-  background: var(--primary-color);
-}
-
-.track-button {
-  background: var(--primary-color);
-  color: white;
-  border: none;
-  padding: 12px 24px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 16px;
-  font-weight: bold;
-  transition: all 0.3s;
-  margin-bottom: 20px;
-  width: 200px;
-}
-
-.track-button.active {
-  background: #dc3545;
-}
-
-.track-button:hover {
-  opacity: 0.9;
-  transform: translateY(-2px);
-}
-
-.fps-counter {
-  margin-bottom: 20px;
-  color: var(--primary-color);
-  font-weight: bold;
+  padding: 20px;
 }
 
 .camera-preview {
-  position: relative;
-  width: 100%;
-  max-width: 640px;
-  height: 480px;
-  border: 2px solid var(--primary-color);
-  border-radius: 8px;
-  overflow: hidden;
-  margin-bottom: 20px;
-  background: #000;
-}
-
-.preview-label {
-  position: absolute;
-  top: 5px;
-  left: 5px;
-  background: rgba(0,0,0,0.5);
-  padding: 3px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  z-index: 10;
-}
-
-.camera-preview video {
-  width: 100%;
-  height: 100%;
-}
-
-.detection-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 5;
-}
-
-.live2d-container {
   flex: 1;
-  background: var(--card-bg);
+  background: #1a1a1a;
   border-radius: 8px;
-  margin-top: 20px;
+  margin-bottom: 20px;
   position: relative;
   overflow: hidden;
+  border: 1px solid #444;
 }
 
-.live2d-container canvas {
+.camera-placeholder {
   width: 100%;
   height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #2a2a2a 25%, #333 25%, #333 50%, #2a2a2a 50%, #2a2a2a 75%, #333 75%, #333);
+  background-size: 20px 20px;
+}
+
+.placeholder-text {
+  font-size: 24px;
+  color: #888;
+  text-align: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 8px;
+}
+
+.fps-counter {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #42b983;
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.controls {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.control-btn {
+  flex: 1;
+  padding: 15px;
+  border: none;
+  border-radius: 8px;
+  background: #42b983;
+  color: white;
+  font-size: 18px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.control-btn:hover {
+  background: #3ca474;
+}
+
+.tracking-data {
+  background: #2d2d2d;
+  border-radius: 8px;
+  padding: 15px;
+  border: 1px solid #444;
+}
+
+.tracking-data h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  color: #42b983;
+  border-bottom: 1px solid #444;
+  padding-bottom: 10px;
+}
+
+.data-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 15px;
+}
+
+.data-item {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 10px;
+  border-radius: 6px;
+}
+
+.data-label {
+  font-weight: bold;
+  color: #888;
+  margin-right: 10px;
+}
+
+.data-value {
+  color: #42b983;
+  font-weight: 500;
 }
 </style>

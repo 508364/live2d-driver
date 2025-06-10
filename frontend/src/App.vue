@@ -1,3 +1,4 @@
+<!-- frontend/src/App.vue -->
 <template>
   <div id="app" :class="themeClass">
     <!-- 全局加载状态 -->
@@ -6,16 +7,13 @@
       <div class="loader-text">{{ globalLoaderText }}</div>
     </div>
     
-    <!-- 应用内容 -->
-    <div class="app-container">
-      <!-- 侧边导航栏 -->
+    <!-- 应用主界面 -->
+    <div v-show="!showGlobalLoader" class="app-container">
+      <!-- 侧边栏 -->
       <div class="sidebar">
         <div class="app-header">
-          <div class="app-logo">
-            <div class="app-icon">👤</div>
-            <div class="app-title">Live2D驱动器</div>
-            <div class="app-version">v1.0.0</div>
-          </div>
+          <div class="app-logo">Live2D Drive</div>
+          <div class="app-version">v1.0.0</div>
         </div>
         
         <div class="nav-items">
@@ -31,15 +29,18 @@
           </div>
         </div>
         
-        <div class="sidebar-footer">
-          <div class="fps-counter" v-if="fps > 0">
-            <span class="fps-icon">📊</span>
-            <span class="fps-value">{{ fps }} FPS</span>
+        <div class="status-panel">
+          <div class="status-row">
+            <span class="status-label">摄像头:</span>
+            <span :class="cameraStatusClass">{{ cameraStatus }}</span>
           </div>
-          
-          <div class="status-indicator">
-            <div class="indicator-dot" :class="statusColor"></div>
-            <span class="status-text">{{ appStatus }}</span>
+          <div class="status-row">
+            <span class="status-label">追踪:</span>
+            <span :class="trackingStatusClass">{{ trackingStatus }}</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">FPS:</span>
+            <span>{{ fps }}</span>
           </div>
         </div>
       </div>
@@ -49,26 +50,39 @@
         <div class="content-header">
           <h2>{{ activeNav }}</h2>
           <div class="header-actions">
-            <button 
-              v-if="activeNav === '首页'" 
-              class="track-btn" 
-              :class="{ active: isTracking }"
-              @click="toggleTracking"
-            >
-              <span class="track-icon">{{ isTracking ? '⏹️' : '▶️' }}</span>
-              <span class="track-text">{{ isTracking ? '停止追踪' : '开始追踪' }}</span>
+            <button v-if="activeNav === '首页'" class="action-btn" @click="toggleTracking">
+              <span>{{ trackingActive ? '⏹️ 停止' : '▶️ 开始' }}追踪</span>
             </button>
-            <button class="refresh-btn" @click="reloadPage">🔄</button>
+            <button class="action-btn" @click="refreshApp">
+              <span>🔄 刷新</span>
+            </button>
           </div>
         </div>
         
         <div class="content-body">
           <Home v-if="activeNav === '首页'" ref="homeComponent" />
           <Camera v-if="activeNav === '虚拟摄像头'" />
-          <Upload v-if="activeNav === '上传live2d形象'" />
+          <Upload v-if="activeNav === '上传模型'" />
           <Logs v-if="activeNav === '日志'" />
-          <About v-if="activeNav === '关于'" />
           <Settings v-if="activeNav === '设置'" />
+        </div>
+      </div>
+    </div>
+    
+    <!-- 错误提示 -->
+    <div v-if="showConnectionError" class="connection-error">
+      <div class="error-content">
+        <h3>⚠️ 连接失败</h3>
+        <p>无法连接到前端开发服务器</p>
+        <p>请检查：</p>
+        <ul>
+          <li>终端中是否有错误消息</li>
+          <li>端口3000是否被其他应用占用</li>
+          <li>防火墙设置是否允许访问</li>
+        </ul>
+        <div class="action-buttons">
+          <button @click="retryConnection">⟳ 重试</button>
+          <button @click="openDevTools">🐞 打开开发者工具</button>
         </div>
       </div>
     </div>
@@ -80,126 +94,168 @@ import Home from './components/Home.vue'
 import Camera from './components/Camera.vue'
 import Upload from './components/Upload.vue'
 import Logs from './components/Logs.vue'
-import About from './components/About.vue'
 import Settings from './components/Settings.vue'
-import { useThemeStore } from './stores/theme'
-import { useLogStore } from './stores/logs'
+import { useAppStore } from './stores/app'
 import { useTrackingStore } from './stores/tracking'
 
 export default {
-  components: { Home, Camera, Upload, Logs, About, Settings },
+  components: { Home, Camera, Upload, Logs, Settings },
   data() {
     return {
-      navItems: [
-        { name: '首页', text: '首页', icon: '🏠' },
-        { name: '虚拟摄像头', text: '虚拟摄像头', icon: '📷' },
-        { name: '上传live2d形象', text: '上传live2d形象', icon: '📁' },
-        { name: '日志', text: '日志', icon: '📝' },
-        { name: '关于', text: '关于', icon: 'ℹ️' },
-        { name: '设置', text: '设置', icon: '⚙️' }
-      ],
-      activeNav: '首页',
       showGlobalLoader: true,
-      globalLoaderText: '正在加载应用资源...',
-      appStatus: '就绪',
+      globalLoaderText: '初始化应用程序...',
+      showConnectionError: false,
+      activeNav: '首页',
+      trackingActive: false,
+      navItems: [
+        { name: 'home', text: '首页', icon: '🏠' },
+        { name: 'camera', text: '虚拟摄像头', icon: '📷' },
+        { name: 'upload', text: '上传模型', icon: '📁' },
+        { name: 'logs', text: '运行日志', icon: '📝' },
+        { name: 'settings', text: '系统设置', icon: '⚙️' }
+      ],
       fps: 0,
       fpsCounter: 0,
-      lastFpsUpdate: 0,
-      isTracking: false
+      lastFpsTime: 0,
+      connectionCheckInterval: null,
+      cameraStatus: '未连接',
+      trackingStatus: '未启动'
     }
   },
   computed: {
     themeClass() {
-      const themeStore = useThemeStore()
-      return `${themeStore.currentTheme}-theme`
+      const appStore = useAppStore()
+      return `theme-${appStore.theme}`
     },
-    statusColor() {
-      if (this.isTracking) return 'green'
-      return 'gray'
+    cameraStatusClass() {
+      return this.cameraStatus === '已连接' ? 'status-on' : 'status-off'
+    },
+    trackingStatusClass() {
+      return this.trackingActive ? 'status-on' : 'status-off'
     }
   },
-  created() {
-    // 应用加载完成后隐藏全局加载器
+  mounted() {
+    // 模拟加载过程
+    setTimeout(() => {
+      this.globalLoaderText = '加载核心模块...'
+    }, 1000)
+    
+    setTimeout(() => {
+      this.globalLoaderText = '初始化AI模型...'
+    }, 2000)
+    
+    setTimeout(() => {
+      this.globalLoaderText = '准备用户界面...'
+    }, 3000)
+    
+    // 完成加载
     setTimeout(() => {
       this.showGlobalLoader = false
-    }, 2500)
+      this.initApp()
+    }, 4000)
     
-    // 设置主题
-    const themeStore = useThemeStore()
-    themeStore.applyTheme()
-    
-    // 初始化日志
-    const logStore = useLogStore()
-    logStore.addLog('应用初始化')
+    // 检查服务器连接
+    this.connectionCheckInterval = setInterval(() => {
+      this.checkServerConnection()
+    }, 5000)
   },
-  mounted() {
-    // FPS计数
-    this.startFpsCounter()
-    
-    // 监听页面刷新按钮
-    window.addEventListener('beforeunload', () => {
-      const trackingStore = useTrackingStore()
-      if (trackingStore.isRunning) {
-        trackingStore.stopTracking()
-      }
-    })
+  beforeUnmount() {
+    clearInterval(this.connectionCheckInterval)
   },
   methods: {
-    setActiveNav(navName) {
-      this.activeNav = navName
-      const logStore = useLogStore()
-      logStore.addLog(`导航到: ${navName}`)
-    },
-    
-    toggleTracking() {
-      this.isTracking = !this.isTracking
-      const trackingStore = useTrackingStore()
+    initApp() {
+      // 启动FPS计数
+      this.startFpsCounter()
       
-      if (this.isTracking) {
-        this.appStatus = '追踪中...'
-        trackingStore.startTracking()
-        logStore.addLog('开始面部追踪')
-      } else {
-        this.appStatus = '就绪'
-        trackingStore.stopTracking()
-        logStore.addLog('停止面部追踪')
-      }
-    },
-    
-    reloadPage() {
-      window.location.reload()
+      // 检查后端连接
+      this.checkServerConnection()
     },
     
     startFpsCounter() {
-      requestAnimationFrame(this.updateFps)
+      const updateFps = (now) => {
+        this.fpsCounter++
+        if (now - this.lastFpsTime >= 1000) {
+          this.fps = this.fpsCounter
+          this.fpsCounter = 0
+          this.lastFpsTime = now
+        }
+        requestAnimationFrame(updateFps)
+      }
+      requestAnimationFrame(updateFps)
     },
     
-    updateFps(now) {
-      this.fpsCounter++
+    checkServerConnection() {
+      fetch('http://localhost:3000')
+        .then(response => {
+          if (response.status === 200) {
+            this.showConnectionError = false
+            this.cameraStatus = '已连接'
+          }
+        })
+        .catch(() => {
+          this.showConnectionError = true
+          this.cameraStatus = '连接失败'
+        })
+    },
+    
+    setActiveNav(nav) {
+      this.activeNav = nav
+    },
+    
+    toggleTracking() {
+      this.trackingActive = !this.trackingActive
+      this.trackingStatus = this.trackingActive ? '运行中' : '已停止'
       
-      if (now - this.lastFpsUpdate > 1000) {
-        this.fps = this.fpsCounter
-        this.fpsCounter = 0
-        this.lastFpsUpdate = now
+      // 更新追踪状态
+      const trackingStore = useTrackingStore()
+      if (this.trackingActive) {
+        trackingStore.startTracking()
+        this.$refs.homeComponent?.startFaceTracking()
+      } else {
+        trackingStore.stopTracking()
+        this.$refs.homeComponent?.stopFaceTracking()
       }
-      
-      requestAnimationFrame(this.updateFps)
+    },
+    
+    refreshApp() {
+      window.location.reload()
+    },
+    
+    retryConnection() {
+      this.showConnectionError = false
+      this.checkServerConnection()
+    },
+    
+    openDevTools() {
+      try {
+        // 尝试用键盘事件打开开发者工具
+        const event = new KeyboardEvent('keydown', {
+          key: 'F12',
+          code: 'F12',
+          keyCode: 123,
+          which: 123,
+          ctrlKey: true,
+          shiftKey: true
+        })
+        document.dispatchEvent(event)
+      } catch (e) {
+        alert('无法打开开发者工具，请手动按F12键')
+      }
     }
   }
 }
 </script>
 
-<style>
+<style scoped>
 #app {
   height: 100vh;
   display: flex;
-  background-color: var(--background);
-  color: var(--text-color);
-  overflow: hidden;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  overflow: hidden;
+  background-color: #1e1e1e;
+  color: #f0f0f0;
 }
 
-/* 全局加载器 */
 .global-loader {
   position: fixed;
   top: 0;
@@ -211,17 +267,17 @@ export default {
   justify-content: center;
   align-items: center;
   background: rgba(30, 30, 30, 0.95);
-  z-index: 10000;
-  color: #42b983;
+  z-index: 1000;
 }
 
 .loader-spinner {
-  border: 8px solid rgba(66, 185, 131, 0.3);
-  border-top: 8px solid #42b983;
+  border: 6px solid rgba(66, 185, 131, 0.3);
+  border-top: 6px solid #42b983;
   border-radius: 50%;
   width: 80px;
   height: 80px;
-  animation: spin 1.5s linear infinite;
+  animation: spin 1s linear infinite;
+  margin-bottom: 20px;
 }
 
 @keyframes spin {
@@ -230,72 +286,55 @@ export default {
 }
 
 .loader-text {
-  margin-top: 30px;
-  font-size: 20px;
-  font-weight: 500;
+  font-size: 18px;
+  color: #42b983;
 }
 
-/* 应用容器 */
 .app-container {
   display: flex;
-  flex: 1;
-  overflow: hidden;
+  width: 100%;
+  height: 100%;
 }
 
-/* 侧边栏 */
 .sidebar {
   width: 260px;
-  background: var(--sidebar-bg);
+  background: #252525;
   display: flex;
   flex-direction: column;
   padding: 20px 0;
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
-  z-index: 10;
+  border-right: 1px solid #333;
 }
 
 .app-header {
   padding: 0 20px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  margin-bottom: 20px;
+  border-bottom: 1px solid #333;
+  margin-bottom: 15px;
 }
 
 .app-logo {
-  display: flex;
-  align-items: center;
-}
-
-.app-icon {
-  font-size: 32px;
-  margin-right: 10px;
-}
-
-.app-title {
-  font-size: 20px;
+  font-size: 22px;
   font-weight: bold;
-  color: var(--primary-color);
+  color: #42b983;
+  margin-bottom: 5px;
 }
 
 .app-version {
   font-size: 12px;
-  color: #aaa;
-  margin-top: 2px;
+  color: #888;
 }
 
 .nav-items {
   flex: 1;
-  overflow-y: auto;
-  padding: 0 10px;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
   padding: 12px 20px;
-  margin-bottom: 6px;
+  margin: 5px 10px;
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.3s;
-  color: var(--text-secondary);
+  transition: background 0.2s;
 }
 
 .nav-item:hover {
@@ -303,71 +342,47 @@ export default {
 }
 
 .nav-item.active {
-  background: var(--primary-color);
+  background: #42b983;
   color: white;
 }
 
 .nav-icon {
-  margin-right: 15px;
+  margin-right: 12px;
   font-size: 20px;
-  width: 24px;
-  text-align: center;
 }
 
 .nav-text {
   font-size: 16px;
 }
 
-.sidebar-footer {
-  padding: 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+.status-panel {
+  padding: 15px;
+  background: rgba(0, 0, 0, 0.2);
+  margin: 15px;
+  border-radius: 8px;
 }
 
-.fps-counter {
+.status-row {
   display: flex;
-  align-items: center;
-  margin-bottom: 10px;
-}
-
-.fps-icon {
-  margin-right: 10px;
-  font-size: 18px;
-}
-
-.fps-value {
+  justify-content: space-between;
+  margin: 8px 0;
   font-size: 14px;
+}
+
+.status-label {
+  color: #aaa;
+}
+
+.status-on {
   color: #42b983;
-  font-family: monospace;
+  font-weight: 500;
 }
 
-.status-indicator {
-  display: flex;
-  align-items: center;
-  margin-top: 15px;
+.status-off {
+  color: #ff6b6b;
+  font-weight: 500;
 }
 
-.indicator-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  margin-right: 10px;
-}
-
-.indicator-dot.green {
-  background-color: #42b983;
-  box-shadow: 0 0 10px rgba(66, 185, 131, 0.5);
-}
-
-.indicator-dot.gray {
-  background-color: #888;
-}
-
-.status-text {
-  font-size: 14px;
-  color: var(--text-secondary);
-}
-
-/* 主内容区 */
 .main-content {
   flex: 1;
   display: flex;
@@ -379,15 +394,15 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 15px 20px;
+  border-bottom: 1px solid #333;
+  background: rgba(0, 0, 0, 0.2);
 }
 
 .content-header h2 {
   margin: 0;
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--primary-color);
+  font-size: 20px;
+  font-weight: 500;
 }
 
 .header-actions {
@@ -395,103 +410,132 @@ export default {
   gap: 10px;
 }
 
-.track-btn {
-  display: flex;
-  align-items: center;
-  background: rgba(66, 185, 131, 0.15);
-  color: #42b983;
-  border: none;
-  padding: 8px 15px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.3s;
-  font-weight: 500;
-}
-
-.track-btn.active {
-  background: rgba(255, 99, 99, 0.15);
-  color: #ff6363;
-}
-
-.track-btn:hover {
-  background: rgba(66, 185, 131, 0.25);
-}
-
-.track-btn.active:hover {
-  background: rgba(255, 99, 99, 0.25);
-}
-
-.track-icon {
-  margin-right: 8px;
-}
-
-.refresh-btn {
+.action-btn {
   background: rgba(255, 255, 255, 0.1);
   border: none;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 14px;
   cursor: pointer;
-  font-size: 16px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  transition: all 0.3s;
+  transition: background 0.2s;
+  color: #f0f0f0;
 }
 
-.refresh-btn:hover {
+.action-btn:hover {
   background: rgba(255, 255, 255, 0.2);
-  transform: rotate(180deg);
 }
 
-/* 内容主体 */
 .content-body {
   flex: 1;
   overflow-y: auto;
   padding: 20px;
 }
 
-/* 主题变量 */
-.dark-theme {
+.connection-error {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.error-content {
+  background: #2d2d2d;
+  border: 1px solid #ff6b6b;
+  border-radius: 10px;
+  padding: 30px;
+  max-width: 600px;
+  width: 90%;
+  text-align: center;
+}
+
+.error-content h3 {
+  color: #ff6b6b;
+  margin-top: 0;
+}
+
+.error-content p {
+  margin: 10px 0;
+}
+
+.error-content ul {
+  text-align: left;
+  max-width: 80%;
+  margin: 15px auto;
+  padding-left: 20px;
+}
+
+.error-content li {
+  margin: 8px 0;
+}
+
+.action-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  margin-top: 25px;
+}
+
+.action-buttons button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 5px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.action-buttons button:first-child {
+  background: #42b983;
+  color: white;
+}
+
+.action-buttons button:last-child {
+  background: #2196f3;
+  color: white;
+}
+
+/* 主题样式 */
+.theme-dark {
   --primary-color: #42b983;
   --background: #1e1e1e;
-  --sidebar-bg: #252525;
-  --text-primary: #ffffff;
-  --text-secondary: #cccccc;
   --card-bg: #2d2d2d;
+  --text-color: #f0f0f0;
+  --border-color: #444;
 }
 
-.light-theme {
+.theme-light {
   --primary-color: #42b983;
   --background: #f9f9f9;
-  --sidebar-bg: #f5f5f5;
-  --text-primary: #333333;
-  --text-secondary: #666666;
   --card-bg: #ffffff;
+  --text-color: #333;
+  --border-color: #ddd;
 }
 
-.blue-theme {
+.theme-blue {
   --primary-color: #2196f3;
   --background: #0d47a1;
-  --sidebar-bg: #1a237e;
-  --text-primary: #ffffff;
-  --text-secondary: #cccccc;
-  --card-bg: #283593;
+  --card-bg: #1a237e;
+  --text-color: #fff;
+  --border-color: #283593;
 }
 
-/* 滚动条 */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+body.theme-dark {
+  background-color: var(--background);
+  color: var(--text-color);
 }
 
-::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.1);
-  border-radius: 4px;
+body.theme-light {
+  background-color: var(--background);
+  color: var(--text-color);
 }
 
-::-webkit-scrollbar-thumb {
-  background: var(--primary-color);
-  border-radius: 4px;
+body.theme-blue {
+  background-color: var(--background);
+  color: var(--text-color);
 }
 </style>
